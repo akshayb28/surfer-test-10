@@ -1,5 +1,9 @@
-import { auth } from "@/lib/auth";
-import { NextResponse } from "next/server";
+import { getToken } from "next-auth/jwt";
+import { NextResponse, type NextRequest } from "next/server";
+
+// NOTE: middleware runs on the Edge Runtime with a 1 MB bundle limit (Vercel
+// Hobby). It must NOT import lib/auth (which pulls in Prisma + bcrypt).
+// Sessions use the JWT strategy, so role checks only need the token.
 
 const PROTECTED: Array<{ prefix: string; roles: string[] }> = [
   { prefix: "/tourist", roles: ["TOURIST", "ADMIN"] },
@@ -7,9 +11,11 @@ const PROTECTED: Array<{ prefix: string; roles: string[] }> = [
   { prefix: "/admin", roles: ["ADMIN"] },
 ];
 
-export default auth((req) => {
-  const { nextUrl, auth } = req;
-  const role = auth?.user?.role;
+export default async function middleware(req: NextRequest) {
+  const { nextUrl } = req;
+  const token = await getToken({ req, secret: process.env.AUTH_SECRET });
+  const role = token?.role as string | undefined;
+
   for (const { prefix, roles } of PROTECTED) {
     if (nextUrl.pathname.startsWith(prefix) && (!role || !roles.includes(role))) {
       const url = new URL("/auth/signin", nextUrl.origin);
@@ -18,6 +24,6 @@ export default auth((req) => {
     }
   }
   return NextResponse.next();
-});
+}
 
 export const config = { matcher: ["/tourist/:path*", "/guide/:path*", "/admin/:path*"] };
